@@ -42,6 +42,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-exp', '--exp_name', type=str,
                     help='experiment name')
 parser.add_argument('-i', '--data_dir', type=str, help='Location for the dataset')
+parser.add_argument('-inter', '--inter_dir', type=str, help='intermediate saving location for the data')
 parser.add_argument('-o', '--save_dir', type=str, default='./rPPG-checkpoints',
                     help='Location for parameter checkpoints and samples')
 parser.add_argument('-a', '--nb_filters1', type=int, default=32,
@@ -217,7 +218,6 @@ def train(args, subTrain, subTest, cv_split, img_rows=36, img_cols=36):
 	#loading form a checkpoint to resume training
         if args.manual:
             print("Manual training mode")
-            args.nb_epoch = 20
             print(f"setting number of epocs to {args.nb_epoch}")
             
         #Changed from .hdf5 to .tf
@@ -241,7 +241,7 @@ def train(args, subTrain, subTest, cv_split, img_rows=36, img_cols=36):
             print('****************************************')
             print("saving the model")
             print('****************************************')
-            model.save('/home/bacharya/PURE/models/',save_format='tf')
+            model.save(args.inter_dir,save_format='tf')
 
         val_loss_history = history.history['val_loss']
         val_loss = np.array(val_loss_history)
@@ -283,6 +283,7 @@ def get_video_list(path,basepath):
     videoPaths = []
     with open(path,"r") as f:
         for line in f.readlines():
+            #TODO: update the cohface directory to have - and not _
             videoPaths.append(basepath+ "-".join(line.strip("\n").strip("data").strip("/").split("/"))+".hdf5")
     return videoPaths
 
