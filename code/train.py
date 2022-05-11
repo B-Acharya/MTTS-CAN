@@ -13,13 +13,25 @@ import os
 import numpy as np
 import scipy.io
 import tensorflow as tf
+from tensorflow.keras.optimizers import Adadelta
+from tensorflow import keras
 
 from data_generator import DataGenerator
 from model import HeartBeat, CAN, CAN_3D, Hybrid_CAN, TS_CAN, MTTS_CAN, \
     MT_Hybrid_CAN, MT_CAN_3D, MT_CAN
 from pre_process import get_nframe_video, split_subj, sort_video_list
 
-np.random.seed(100)  # for reproducibility
+
+
+
+os.environ['TF_DETERMINISTIC_OPS'] = '1'
+os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
+
+#for reproducibility 
+tf.config.experimental.enable_op_determinism()
+seed = 100
+tf.keras.utils.set_random_seed(seed)
+
 tf.test.is_gpu_available()
 tf.keras.backend.clear_session()
 print(tf.__version__)
@@ -46,7 +58,7 @@ parser.add_argument('-e', '--nb_dense', type=int, default=128,
                     help='number of dense units')
 parser.add_argument('-f', '--cv_split', type=int, default=0,
                     help='cv_split')
-parser.add_argument('-g', '--nb_epoch', type=int, default=24,
+parser.add_argument('-g', '--nb_epoch', type=int, default=25,
                     help='nb_epoch')
 parser.add_argument('-t', '--nb_task', type=int, default=12,
                     help='nb_task')
@@ -59,6 +71,10 @@ parser.add_argument('-save', '--save_all', type=int, default=1,
                     help='save all or not')
 parser.add_argument('-resp', '--respiration', type=int, default=0,
                     help='train with resp or not')
+parser.add_argument('-m', '--manual', type=int, default=0,
+                    help='train with smaller epocs and save and restart training')
+parser.add_argument('-init', '--initial', type=int, default=0,
+                    help='first training instance')
 
 args = parser.parse_args()
 print('input args:\n', json.dumps(vars(args), indent=4, separators=(',', ':')))  # pretty print args
@@ -105,7 +121,9 @@ def train(args, subTrain, subTest, cv_split, img_rows=36, img_cols=36):
                 args.batch_size = 32
             elif args.temporal == 'Hybrid_CAN' or args.temporal == 'MT_Hybrid_CAN':
                 print("bitch")
-                args.batch_size = 16
+                #Added to run on gpu to cover the batch size
+                args.batch_size = 4
+                #args.batch_size = 16
             else:
                 raise ValueError('Unsupported Model Type!')
         elif strategy.num_replicas_in_sync == 8:
@@ -117,92 +135,113 @@ def train(args, subTrain, subTest, cv_split, img_rows=36, img_cols=36):
             args.batch_size = args.batch_size // 2
         else:
             raise Exception('Only supporting 4 GPUs or 8 GPUs now. Please adjust learning rate in the training script!')
-
-        if args.temporal == 'CAN':
-            print('Using CAN!')
-            model = CAN(args.nb_filters1, args.nb_filters2, input_shape, dropout_rate1=args.dropout_rate1,
-                        dropout_rate2=args.dropout_rate2, nb_dense=args.nb_dense)
-        elif args.temporal == 'MT_CAN':
-            print('Using MT_CAN!')
-            model = MT_CAN(args.nb_filters1, args.nb_filters2, input_shape, dropout_rate1=args.dropout_rate1,
-                           dropout_rate2=args.dropout_rate2, nb_dense=args.nb_dense)
-        elif args.temporal == 'CAN_3D':
-            print('Using CAN_3D!')
-            input_shape = (img_rows, img_cols, args.frame_depth, 3)
-            model = CAN_3D(args.frame_depth, args.nb_filters1, args.nb_filters2, input_shape,
-                           dropout_rate1=args.dropout_rate1, dropout_rate2=args.dropout_rate2, nb_dense=args.nb_dense)
-        elif args.temporal == 'MT_CAN_3D':
-            print('Using MT_CAN_3D!')
-            input_shape = (img_rows, img_cols, args.frame_depth, 3)
-            model = MT_CAN_3D(args.frame_depth, args.nb_filters1, args.nb_filters2, input_shape,
-                              dropout_rate1=args.dropout_rate1, dropout_rate2=args.dropout_rate2,
-                              nb_dense=args.nb_dense)
-        elif args.temporal == 'TS_CAN':
-            print('Using TS_CAN!')
-            input_shape = (img_rows, img_cols, 3)
-            model = TS_CAN(args.frame_depth, args.nb_filters1, args.nb_filters2, input_shape,
-                           dropout_rate1=args.dropout_rate1, dropout_rate2=args.dropout_rate2, nb_dense=args.nb_dense)
-        elif args.temporal == 'MTTS_CAN':
-            print('Using MTTS_CAN!')
-            input_shape = (img_rows, img_cols, 3)
-            model = MTTS_CAN(args.frame_depth, args.nb_filters1, args.nb_filters2, input_shape,
-                             dropout_rate1=args.dropout_rate1, dropout_rate2=args.dropout_rate2, nb_dense=args.nb_dense)
-        elif args.temporal == 'Hybrid_CAN':
-            print('Using Hybrid_CAN!')
-            input_shape_motion = (img_rows, img_cols, args.frame_depth, 3)
-            input_shape_app = (img_rows, img_cols, 3)
-            model = Hybrid_CAN(args.frame_depth, args.nb_filters1, args.nb_filters2, input_shape_motion,
-                               input_shape_app,
-                               dropout_rate1=args.dropout_rate1, dropout_rate2=args.dropout_rate2,
-                               nb_dense=args.nb_dense)
-        elif args.temporal == 'MT_Hybrid_CAN':
-            print('Using MT_Hybrid_CAN!')
-            input_shape_motion = (img_rows, img_cols, args.frame_depth, 3)
-            input_shape_app = (img_rows, img_cols, 3)
-            model = MT_Hybrid_CAN(args.frame_depth, args.nb_filters1, args.nb_filters2, input_shape_motion,
-                                  input_shape_app,
+        if args.initial:
+            if args.temporal == 'CAN':
+                print('Using CAN!')
+                model = CAN(args.nb_filters1, args.nb_filters2, input_shape, dropout_rate1=args.dropout_rate1,
+                            dropout_rate2=args.dropout_rate2, nb_dense=args.nb_dense)
+            elif args.temporal == 'MT_CAN':
+                print('Using MT_CAN!')
+                model = MT_CAN(args.nb_filters1, args.nb_filters2, input_shape, dropout_rate1=args.dropout_rate1,
+                               dropout_rate2=args.dropout_rate2, nb_dense=args.nb_dense)
+            elif args.temporal == 'CAN_3D':
+                print('Using CAN_3D!')
+                input_shape = (img_rows, img_cols, args.frame_depth, 3)
+                model = CAN_3D(args.frame_depth, args.nb_filters1, args.nb_filters2, input_shape,
+                               dropout_rate1=args.dropout_rate1, dropout_rate2=args.dropout_rate2, nb_dense=args.nb_dense)
+            elif args.temporal == 'MT_CAN_3D':
+                print('Using MT_CAN_3D!')
+                input_shape = (img_rows, img_cols, args.frame_depth, 3)
+                model = MT_CAN_3D(args.frame_depth, args.nb_filters1, args.nb_filters2, input_shape,
                                   dropout_rate1=args.dropout_rate1, dropout_rate2=args.dropout_rate2,
                                   nb_dense=args.nb_dense)
+            elif args.temporal == 'TS_CAN':
+                print('Using TS_CAN!')
+                input_shape = (img_rows, img_cols, 3)
+                model = TS_CAN(args.frame_depth, args.nb_filters1, args.nb_filters2, input_shape,
+                               dropout_rate1=args.dropout_rate1, dropout_rate2=args.dropout_rate2, nb_dense=args.nb_dense)
+            elif args.temporal == 'MTTS_CAN':
+                print('Using MTTS_CAN!')
+                input_shape = (img_rows, img_cols, 3)
+                model = MTTS_CAN(args.frame_depth, args.nb_filters1, args.nb_filters2, input_shape,
+                                 dropout_rate1=args.dropout_rate1, dropout_rate2=args.dropout_rate2, nb_dense=args.nb_dense)
+            elif args.temporal == 'Hybrid_CAN':
+                print('Using Hybrid_CAN!')
+                input_shape_motion = (img_rows, img_cols, args.frame_depth, 3)
+                input_shape_app = (img_rows, img_cols, 3)
+                model = Hybrid_CAN(args.frame_depth, args.nb_filters1, args.nb_filters2, input_shape_motion,
+                                   input_shape_app,
+                                   dropout_rate1=args.dropout_rate1, dropout_rate2=args.dropout_rate2,
+                                   nb_dense=args.nb_dense)
+            elif args.temporal == 'MT_Hybrid_CAN':
+                print('Using MT_Hybrid_CAN!')
+                input_shape_motion = (img_rows, img_cols, args.frame_depth, 3)
+                input_shape_app = (img_rows, img_cols, 3)
+                model = MT_Hybrid_CAN(args.frame_depth, args.nb_filters1, args.nb_filters2, input_shape_motion,
+                                      input_shape_app,
+                                      dropout_rate1=args.dropout_rate1, dropout_rate2=args.dropout_rate2,
+                                      nb_dense=args.nb_dense)
+            else:
+                raise ValueError('Unsupported Model Type!')
         else:
-            raise ValueError('Unsupported Model Type!')
-
-        optimizer = tf.keras.optimizers.Adadelta(learning_rate=args.lr)
-        if args.temporal == 'MTTS_CAN' or args.temporal == 'MT_Hybrid_CAN' or args.temporal == 'MT_CAN_3D' or \
-                args.temporal == 'MT_CAN':
-            losses = {"output_1": "mean_squared_error", "output_2": "mean_squared_error"}
-            loss_weights = {"output_1": 1.0, "output_2": 1.0}
-            model.compile(loss=losses, loss_weights=loss_weights, optimizer=optimizer)
+            print("Loading old model")
+            model = keras.models.load_model('/home/bacharya/PURE/models/')
+        #optimizer = tf.python.keras.optimizers.Adadelta(learning_rate=args.lr)
+        if args.initial:
+            optimizer = Adadelta(learning_rate=args.lr)
+            if args.temporal == 'MTTS_CAN' or args.temporal == 'MT_Hybrid_CAN' or args.temporal == 'MT_CAN_3D' or \
+                    args.temporal == 'MT_CAN':
+                losses = {"output_1": "mean_squared_error", "output_2": "mean_squared_error"}
+                loss_weights = {"output_1": 1.0, "output_2": 1.0}
+                model.compile(loss=losses, loss_weights=loss_weights, optimizer=optimizer)
+            else:
+                model.compile(loss='mean_squared_error', optimizer=optimizer)
         else:
-            model.compile(loss='mean_squared_error', optimizer=optimizer)
+            print("model.compile skipped as we are using old model")
+            pass
         print('learning rate: ', args.lr)
 
         # %% Create data genener
         training_generator = DataGenerator(path_of_video_tr, nframe_per_video, (img_rows, img_cols),
                                            batch_size=args.batch_size, frame_depth=args.frame_depth,
-                                           temporal=args.temporal, respiration=args.respiration)
+                                           temporal=args.temporal, respiration=args.respiration, shuffle = False)
         validation_generator = DataGenerator(path_of_video_test, nframe_per_video, (img_rows, img_cols),
                                              batch_size=args.batch_size, frame_depth=args.frame_depth,
-                                             temporal=args.temporal, respiration=args.respiration)
+                                             temporal=args.temporal, respiration=args.respiration, shuffle= False)
         # %%  Checkpoint Folders
         checkpoint_folder = str(os.path.join(args.save_dir, args.exp_name))
         if not os.path.exists(checkpoint_folder):
             os.makedirs(checkpoint_folder)
         cv_split_path = str(os.path.join(checkpoint_folder, "cv_" + str(cv_split)))
 
+	#loading form a checkpoint to resume training
+        if args.manual:
+            print("Manual training mode")
+            args.nb_epoch = 20
+            print(f"setting number of epocs to {args.nb_epoch}")
+            
+        #Changed from .hdf5 to .tf
         # %% Callbacks
         if args.save_all == 1:
             save_best_callback = tf.keras.callbacks.ModelCheckpoint(
-                filepath=cv_split_path + "_epoch{epoch:02d}_model.hdf5",
+                filepath=cv_split_path + "_epoch{epoch:02d}_model.tf",
                 save_best_only=False, verbose=1)
         else:
-            save_best_callback = tf.keras.callbacks.ModelCheckpoint(filepath=cv_split_path + "_last_model.hdf5",
+            save_best_callback = tf.keras.callbacks.ModelCheckpoint(filepath=cv_split_path + "_last_model.tf",
                                                                     save_best_only=False, verbose=1)
         csv_logger = tf.keras.callbacks.CSVLogger(filename=cv_split_path + '_train_loss_log.csv')
         hb_callback = HeartBeat(training_generator, validation_generator, args, str(cv_split), checkpoint_folder)
+        print("***********************")
+        print(model.summary())
 
         # %% Model Training and Saving Results
         history = model.fit(x=training_generator, validation_data=validation_generator, epochs=args.nb_epoch, verbose=1,
-                            shuffle=False, callbacks=[csv_logger, save_best_callback, hb_callback], validation_freq=4)
+                            shuffle=False, callbacks=[csv_logger, save_best_callback, hb_callback], validation_freq=1)
+        if args.manual:
+            print('****************************************')
+            print("saving the model")
+            print('****************************************')
+            model.save('/home/bacharya/PURE/models/',save_format='tf')
 
         val_loss_history = history.history['val_loss']
         val_loss = np.array(val_loss_history)
@@ -244,10 +283,10 @@ def get_video_list(path,basepath):
     videoPaths = []
     with open(path,"r") as f:
         for line in f.readlines():
-            videoPaths.append(basepath+ "_".join(line.strip("\n").strip("data").strip("/").split("/"))+".hdf5")
+            videoPaths.append(basepath+ "-".join(line.strip("\n").strip("data").strip("/").split("/"))+".hdf5")
     return videoPaths
 
 print('Using Split ', str(args.cv_split))
-subTrain = get_video_list("/media/compute/vol/rppg/cohface/protocols/all/train.txt", "/media/compute/vol/rppg/cohface/features/")
-subTest = get_video_list("/media/compute/vol/rppg/cohface/protocols/all/dev.txt", "/media/compute/vol/rppg/cohface/features/")
+subTrain = get_video_list("/home/bacharya/PURE/train.csv",args.data_dir)
+subTest = get_video_list("/home/bacharya/PURE/dev.csv", args.data_dir)
 train(args, subTrain, subTest, args.cv_split)
