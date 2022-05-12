@@ -1,6 +1,5 @@
 #!/bin/bash
 #SBATCH --ntasks-per-node=1
-#SBATCH --qos=regular             # regular or long
 #SBATCH --partition=volta_devel   # volta_compute or volta_devel
 #SBATCH --mail-use=bacharya@techfak.uni-bielefeld.de
 #SBATCH --mail-type=BEGIN
