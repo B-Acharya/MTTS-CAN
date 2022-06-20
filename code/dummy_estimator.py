@@ -19,67 +19,95 @@ from scipy.signal import butter
 import h5py
 import heartpy as hp
 from sklearn.preprocessing import MinMaxScaler
+from utils import BVPsignal 
 
 def dummy_estimate(path_videos):
+    """
+    Return the dummy heartrate estiamte and mean bvp estimate
+    """
     mms = MinMaxScaler()
     hr_estimates = []
+    bvp_mean = []
     fs = 20.0
     for video_path in path_videos:
         logging.info(f"Running on video {video_path}")
+        #path to the processed signal(MinMaxScaler)
         truth_path = video_path.replace(".avi","_dataFile.hdf5")
+        #path to the original signal from the dataset
+        truth_path_original = video_path.replace(".avi",".hdf5")
+       
         gound_truth_file = h5py.File(truth_path, "r")
         pulse_truth = gound_truth_file["pulse"]   ### range ground truth from 0 to 1
-        pulse_truth = detrend(np.cumsum(pulse_truth), 100)
-        [b_pulse_tr, a_pulse_tr] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
-        pulse_truth = scipy.signal.filtfilt(b_pulse_tr, a_pulse_tr, np.double(pulse_truth))
-        pulse_truth = np.array(mms.fit_transform(pulse_truth.reshape(-1,1))).flatten()
-        working_data_truth, measures_truth = hp.process_segmentwise(pulse_truth, sample_rate=fs, segment_width = 10, segment_overlap = 0.90)
-        bpm_truth = np.array(measures_truth['bpm'])
-        bpm_truth = bpm_truth[~np.isnan(bpm_truth)]
-        hr_estimates.extend(bpm_truth)
+        
+        gound_truth_file.close()
+        
+        bvp_mean.extend(np.mean(pulse_truth)
+        
+        gound_truth_file = h5py.File(truth_path_original, "r")
+        bvp_signal = np.array(gound_truth_file['pulse'])
+        gound_truth_file.close()
+        bvp = BVPsignal(bvp_signal.reshape(1,len(bvp_signal),256)
+        gtBPM, timeGT = bvp.getBPM(winsize=10)
+        #bpm_truth = bpm_truth[~np.isnan(bpm_truth)]
+        hr_estimates.extend(gtBPM)
         logging.info(f'{bpm_truth}')
     
-    return np.mean(hr_estimates)
-def evaluate(path_of_video, dummyEst):
-    mms = MinMaxScaler()
-    fs = 20.0
-    error = []
+    return np.mean(hr_estimates), np.mean(bvp_mean)
+
+def evaluate(path_of_video, dummyEst,dummyBVP):
+    error_HR = []
+    error_BVP = []
     for video_path in path_of_video:
+
         logging.info(f"Running on video {video_path}")
+        truth_path_original = video_path.replace(".avi",".hdf5")
+        gound_truth_file = h5py.File(truth_path_original, "r")
+        bvp_signal = np.array(gound_truth_file['pulse'])
+        gound_truth_file.close()
+
+        bvp = BVPsignal(bvp_signal.reshape(1,len(bvp_signal),256)
+        gtBPM, timeGT = bvp.getBPM(winsize=10)
+
+        #bpm_truth = bpm_truth[~np.isnan(bpm_truth)]
+        bpm_pred = np.ones(gtBPM.shape)*dummyEst
+        mae = mean_absolute_error(bpm_pred, bpm_truth)
+        logging.info(f"MAE, {mae}")
+        error_HR.append(mae)
+        gound_truth_file.close()
 
         truth_path = video_path.replace(".avi","_dataFile.hdf5")
         gound_truth_file = h5py.File(truth_path, "r")
         pulse_truth = gound_truth_file["pulse"]   ### range ground truth from 0 to 1
-        pulse_truth = detrend(np.cumsum(pulse_truth), 100)
-        [b_pulse_tr, a_pulse_tr] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
-        pulse_truth = scipy.signal.filtfilt(b_pulse_tr, a_pulse_tr, np.double(pulse_truth))
-        pulse_truth = np.array(mms.fit_transform(pulse_truth.reshape(-1,1))).flatten()
+        bpm_pred = np.ones(pulse_truth.shape)*dummyBVP
+        mae_bvp = mean_absolute_error(pulse_truth, bpm_pred)
+        error_BVP.append(mae_bvp)
 
-        working_data_truth, measures_truth = hp.process_segmentwise(pulse_truth, sample_rate=fs, segment_width = 10, segment_overlap = 0.90)
-        bpm_truth = np.array(measures_truth['bpm'])
-        bpm_truth = bpm_truth[~np.isnan(bpm_truth)]
-        bpm_pred = np.ones(bpm_truth.shape)*dummyEst
-        mae = mean_absolute_error(bpm_pred, bpm_truth)
-        logging.info(f"MAE, {mae}")
-        error.append(mae)
-    return error
+    return error_HR, error_bvp
         
 if __name__ == "__main__":
 
     logging.basicConfig(filename='Dummy-Evalutation.log', level=logging.INFO)
     logging.info('Started')
     subTrain, subDev, subTest = split_subj_("/work/data/bacharya/cohface/", "COHFACE")
-    path_of_video_train = sort_dataFile_list_("/work/data/bacharya/cohface/", subTrain, "COHFACE", trainMode=True) 
+    path_of_video_train = sort_dataFile_list_("/work/data/bacharya/cohface/", subTrain[0], "COHFACE", trainMode=True) 
 
     #Calculate the dummy estimate
-    dummy_mean = dummy_estimate(path_of_video_train)    
+    dummy_mean, bvp_mean = dummy_estimate(path_of_video_train)    
     print("dummy mean ", dummy_mean)
     logging.info(f"Dummy mean : {dummy_mean}")
     #test set mae evaluation
-    path_of_video_tr = sort_dataFile_list_("/work/data/bacharya/cohface/", subTest, "COHFACE", trainMode=True)
+    path_of_video_dev = sort_dataFile_list_("/work/data/bacharya/cohface/", subDev[0],_ "COHFACE", trainMode=True)
+    path_of_video_test = sort_dataFile_list_("/work/data/bacharya/cohface/", subTest[0], "COHFACE", trainMode=True)
     logging.info(f"list of all the videos f{subTest,path_of_video_tr}")
-    errors = evaluate(path_of_video_tr,dummy_mean)
-    logging.info(f"Mean error {np.mean(np.array(errors))}")
-    np.save("./dummy_errors.npy", np.mean(np.array(errors)))
+    errors_HR, errors_bvp = evaluate(path_of_video_dev,dummy_mean, bvp_mean)
+    logging.info(f"Mean error {np.mean(np.array(errors_HR))}, Mean loss {np.mean(np.array(error_bvp))}")
+    np.save("./dev_dummy_errors.npy", np.mean(np.array(errors_HR)))
+    np.save("./dev_dummy_errorsbvp.npy", np.mean(np.array(errors_bvp)))
+    logging.info(f"errors {errors}")
+
+    errors_HR, errors_bvp = evaluate(path_of_video_dev,dummy_mean, bvp_mean)
+    logging.info(f"Mean error {np.mean(np.array(errors_HR))}, Mean loss {np.mean(np.array(error_bvp))}")
+    np.save("./dummy_errors.npy", np.mean(np.array(errors_HR)))
+    np.save("./dummy_errorsbvp.npy", np.mean(np.array(errors_bvp)))
     logging.info(f"errors {errors}")
     logging.info('Finished')
