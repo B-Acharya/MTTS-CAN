@@ -64,7 +64,7 @@ parser.add_argument('-e', '--nb_dense', type=int, default=128,
                     help='number of dense units')
 parser.add_argument('-f', '--cv_split', type=int, default=0,
                     help='cv_split')
-parser.add_argument('-g', '--nb_epoch', type=int, default=2,
+parser.add_argument('-g', '--nb_epoch', type=int, default=1,
                     help='nb_epoch')
 parser.add_argument('-t', '--nb_task', type=int, default=12,
                     help='nb_task')
@@ -85,15 +85,7 @@ parser.add_argument('-init', '--initial', type=int, default=0,
 args = parser.parse_args()
 print('input args:\n', json.dumps(vars(args), indent=4, separators=(',', ':')))  # pretty print args
 
-# %% Spliting Data
-
-print('Spliting Data...')
-subNum = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 25, 26, 27])
-taskList = list(range(1, args.nb_task+1))
-
 # %% Training
-
-
 def train(args, subTrain, subTest, cv_split, img_rows=36, img_cols=36):
     print('================================')
     print('Train...')
@@ -110,7 +102,7 @@ def train(args, subTrain, subTest, cv_split, img_rows=36, img_cols=36):
     print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
     path_of_video_tr = sort_dataFile_list_(args.data_dir, subTrain, args.database_name, trainMode=True)
-    path_of_video_test = sort_dataFile_list_(args.data_dir, subTest, args.database_name, trainMode=False)
+    path_of_video_test = sort_dataFile_list_(args.data_dir, subTest, args.database_name, trainMode=True)
 
     print('sample path: ', path_of_video_tr[0])
     nframe_per_video = get_nframe_video(path_of_video_tr[0])
@@ -270,24 +262,24 @@ def train(args, subTrain, subTest, cv_split, img_rows=36, img_cols=36):
         else:
             print('Test score:', score)
         print('****************************************')
-        #print('Start saving predicitions from the last epoch')
+        print('Start saving predicitions from the last epoch')
 
         #training_generator = DataGenerator(path_of_video_tr, nframe_per_video, (img_rows, img_cols),
         #                                   batch_size=args.batch_size, frame_depth=args.frame_depth,
         #                                   temporal=args.temporal, respiration=args.respiration, shuffle=False)
 
-        #validation_generator = DataGenerator(path_of_video_test, nframe_per_video, (img_rows, img_cols),
-        #                                     batch_size=args.batch_size, frame_depth=args.frame_depth,
-        #                                     temporal=args.temporal, respiration=args.respiration, shuffle=False)
+        validation_generator = DataGenerator(path_of_video_test, nframe_per_video, (img_rows, img_cols),
+                                             batch_size=args.batch_size, frame_depth=args.frame_depth,
+                                             temporal=args.temporal, respiration=args.respiration, shuffle=False)
 
         #yptrain = model.predict(training_generator, verbose=1)
         #scipy.io.savemat(checkpoint_folder + '/yptrain_best_' + '_cv' + str(cv_split) + '.mat',
         #                 mdict={'yptrain': yptrain})
-        #yptest = model.predict(validation_generator, verbose=1)
-        #scipy.io.savemat(checkpoint_folder + '/yptest_best_' + '_cv' + str(cv_split) + '.mat',
-        #                 mdict={'yptest': yptest})
+        yptest = model.predict(validation_generator, verbose=1)
+        scipy.io.savemat(checkpoint_folder + '/yptest_best_' + '_cv' + str(cv_split) + '.mat',
+                         mdict={'yptest': yptest})
 
-        #print('Finish saving the results from the last epoch')
+        print('Finish saving the results from the last epoch')
 
 
 # %% Training
@@ -300,10 +292,5 @@ def get_video_list(path,basepath):
     return videoPaths
 
 print('Using Split ', str(args.cv_split))
-#subTrain = get_video_list("/home/bacharya/PURE/train.csv",args.data_dir)
-#subTest = get_video_list("/home/bacharya/PURE/dev.csv", args.data_dir)
-#subTrain = get_video_list("/work/data/bacharya/cohface/protocols/all/train.txt",args.data_dir)
-#subTest = get_video_list("/work/data/bacharya/cohface/protocols/all/dev.txt", args.data_dir)
 subTrain, subDev, subTest = split_subj_("/work/data/bacharya/cohface/", "COHFACE")
-subTrain.extend(subDev)
 train(args, subTrain, subDev, args.cv_split)

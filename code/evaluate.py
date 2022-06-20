@@ -21,6 +21,7 @@ from inference_preprocess import preprocess_raw_video, detrend
 from scipy.signal import butter
 import h5py
 import heartpy as hp
+from sklearn.preprocessing import MinMaxScaler
 
 def get_frame_sum(list_vid, maxLen_Video):
     frames_sum = 0
@@ -71,6 +72,7 @@ def prepare_MTTS_CAN(video, maxlen):
 
 
 def evaluate(model_path, test_set, model_name):
+    mms = MinMaxScaler()
     model_ckpt = model_path
     img_rows = 36
     img_cols = 36
@@ -100,11 +102,16 @@ def evaluate(model_path, test_set, model_name):
         pulse_pred = detrend(np.cumsum(pulse_pred), 100)
         [b_pulse, a_pulse] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
         pulse_pred = scipy.signal.filtfilt(b_pulse, a_pulse, np.double(pulse_pred))
+        pulse_pred = np.array(mms.fit_transform(pulse_pred.reshape(-1,1))).flatten()
 
         truth_path = video_path.replace(".avi","_dataFile.hdf5")
         gound_truth_file = h5py.File(truth_path, "r")
         pulse_truth = gound_truth_file["pulse"]   ### range ground truth from 0 to 1
         pulse_truth = pulse_truth[0:dXsub_len]
+        pulse_truth = detrend(np.cumsum(pulse_truth), 100)
+        [b_pulse_tr, a_pulse_tr] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
+        pulse_truth = scipy.signal.filtfilt(b_pulse_tr, a_pulse_tr, np.double(pulse_truth))
+        pulse_truth = np.array(mms.fit_transform(pulse_truth.reshape(-1,1))).flatten()
 
         if len(pulse_pred) > len(pulse_truth):
             pulse_pred = pulse_pred[:len(pulse_truth)]
@@ -121,6 +128,7 @@ def evaluate(model_path, test_set, model_name):
         logging.info(f'{bpm_pred[np.isnan(bpm_truth)]}')
         logging.info(f'{bpm_truth[np.isnan(bpm_truth)]}')
         bpm_pred, bpm_truth = bpm_pred[~np.isnan(bpm_pred)], bpm_truth[~np.isnan(bpm_pred)] 
+        bpm_pred, bpm_truth = bpm_pred[~np.isnan(bpm_truth)], bpm_truth[~np.isnan(bpm_truth)] 
         mae = mean_absolute_error(bpm_pred, bpm_truth)
         logging.info(f"MAE, {mae}")
         error.append(mae)
