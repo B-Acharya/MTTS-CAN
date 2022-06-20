@@ -34,23 +34,24 @@ def dummy_estimate(path_videos):
         #path to the processed signal(MinMaxScaler)
         truth_path = video_path.replace(".avi","_dataFile.hdf5")
         #path to the original signal from the dataset
-        truth_path_original = video_path.replace(".avi",".hdf5")
+        truth_path_original = truth_path.replace("_dataFile.hdf5",".hdf5")
+        print(truth_path_original)
+        print(truth_path)
        
         gound_truth_file = h5py.File(truth_path, "r")
-        pulse_truth = gound_truth_file["pulse"]   ### range ground truth from 0 to 1
-        
+        pulse_truth = np.array(gound_truth_file["pulse"])   ### range ground truth from 0 to 1
+        bvp_mean.append(np.mean(pulse_truth))
         gound_truth_file.close()
-        
-        bvp_mean.extend(np.mean(pulse_truth)
-        
+
         gound_truth_file = h5py.File(truth_path_original, "r")
         bvp_signal = np.array(gound_truth_file['pulse'])
-        gound_truth_file.close()
-        bvp = BVPsignal(bvp_signal.reshape(1,len(bvp_signal),256)
+        print(bvp_signal.shape)
+        bvp = BVPsignal(bvp_signal.reshape(1,len(bvp_signal)),256)
         gtBPM, timeGT = bvp.getBPM(winsize=10)
         #bpm_truth = bpm_truth[~np.isnan(bpm_truth)]
+        gound_truth_file.close()
         hr_estimates.extend(gtBPM)
-        logging.info(f'{bpm_truth}')
+        logging.info(f'{gtBPM}')
     
     return np.mean(hr_estimates), np.mean(bvp_mean)
 
@@ -60,54 +61,57 @@ def evaluate(path_of_video, dummyEst,dummyBVP):
     for video_path in path_of_video:
 
         logging.info(f"Running on video {video_path}")
-        truth_path_original = video_path.replace(".avi",".hdf5")
+        truth_path = video_path.replace(".avi","_dataFile.hdf5")
+        truth_path_original = truth_path.replace("_dataFile.hdf5",".hdf5")
+        print(truth_path_original)
+        print(truth_path)
         gound_truth_file = h5py.File(truth_path_original, "r")
         bvp_signal = np.array(gound_truth_file['pulse'])
         gound_truth_file.close()
 
-        bvp = BVPsignal(bvp_signal.reshape(1,len(bvp_signal),256)
+        bvp = BVPsignal(bvp_signal.reshape(1,len(bvp_signal)),256)
         gtBPM, timeGT = bvp.getBPM(winsize=10)
 
         #bpm_truth = bpm_truth[~np.isnan(bpm_truth)]
         bpm_pred = np.ones(gtBPM.shape)*dummyEst
-        mae = mean_absolute_error(bpm_pred, bpm_truth)
+        mae = mean_absolute_error(bpm_pred, gtBPM)
         logging.info(f"MAE, {mae}")
         error_HR.append(mae)
         gound_truth_file.close()
 
-        truth_path = video_path.replace(".avi","_dataFile.hdf5")
         gound_truth_file = h5py.File(truth_path, "r")
-        pulse_truth = gound_truth_file["pulse"]   ### range ground truth from 0 to 1
+        pulse_truth = np.array(gound_truth_file["pulse"])   ### range ground truth from 0 to 1
         bpm_pred = np.ones(pulse_truth.shape)*dummyBVP
         mae_bvp = mean_absolute_error(pulse_truth, bpm_pred)
         error_BVP.append(mae_bvp)
 
-    return error_HR, error_bvp
+    return error_HR, error_BVP
         
 if __name__ == "__main__":
 
     logging.basicConfig(filename='Dummy-Evalutation.log', level=logging.INFO)
     logging.info('Started')
     subTrain, subDev, subTest = split_subj_("/work/data/bacharya/cohface/", "COHFACE")
-    path_of_video_train = sort_dataFile_list_("/work/data/bacharya/cohface/", subTrain[0], "COHFACE", trainMode=True) 
+    path_of_video_train = sort_dataFile_list_("/work/data/bacharya/cohface/", subTrain, "COHFACE", trainMode=True) 
 
     #Calculate the dummy estimate
     dummy_mean, bvp_mean = dummy_estimate(path_of_video_train)    
     print("dummy mean ", dummy_mean)
     logging.info(f"Dummy mean : {dummy_mean}")
     #test set mae evaluation
-    path_of_video_dev = sort_dataFile_list_("/work/data/bacharya/cohface/", subDev[0],_ "COHFACE", trainMode=True)
-    path_of_video_test = sort_dataFile_list_("/work/data/bacharya/cohface/", subTest[0], "COHFACE", trainMode=True)
-    logging.info(f"list of all the videos f{subTest,path_of_video_tr}")
+    path_of_video_dev = sort_dataFile_list_("/work/data/bacharya/cohface/", subDev, "COHFACE", trainMode=True)
+    path_of_video_test = sort_dataFile_list_("/work/data/bacharya/cohface/", subTest, "COHFACE", trainMode=True)
+    logging.info(f"list of all the videos f{subTest,path_of_video_dev}")
+    logging.info(f"list of all the videos f{subTest,path_of_video_test}")
     errors_HR, errors_bvp = evaluate(path_of_video_dev,dummy_mean, bvp_mean)
-    logging.info(f"Mean error {np.mean(np.array(errors_HR))}, Mean loss {np.mean(np.array(error_bvp))}")
+    logging.info(f"Mean error {np.mean(np.array(errors_HR))}, Mean loss {np.mean(np.array(errors_bvp))}")
     np.save("./dev_dummy_errors.npy", np.mean(np.array(errors_HR)))
     np.save("./dev_dummy_errorsbvp.npy", np.mean(np.array(errors_bvp)))
-    logging.info(f"errors {errors}")
+    logging.info(f"errors {errors_HR}")
 
     errors_HR, errors_bvp = evaluate(path_of_video_dev,dummy_mean, bvp_mean)
-    logging.info(f"Mean error {np.mean(np.array(errors_HR))}, Mean loss {np.mean(np.array(error_bvp))}")
+    logging.info(f"Mean error {np.mean(np.array(errors_HR))}, Mean loss {np.mean(np.array(errors_bvp))}")
     np.save("./dummy_errors.npy", np.mean(np.array(errors_HR)))
     np.save("./dummy_errorsbvp.npy", np.mean(np.array(errors_bvp)))
-    logging.info(f"errors {errors}")
+    logging.info(f"errors {errors_HR, errors_bvp}")
     logging.info('Finished')
