@@ -15,4 +15,4 @@ echo $data
 echo $save_dir
 echo $temporal
 echo $initial
-python3 /home/bacharya/MTTS-CAN/code/train.py -exp $exp_name -i $data -o $save_dir -temp $temporal -m 1 -init $initial -inter $inter
+python3 /home/bacharya/MTTS-CAN/code/train-coh.py -exp $exp_name -i $data -o $save_dir -temp $temporal -m 1 -init $initial -inter $inter

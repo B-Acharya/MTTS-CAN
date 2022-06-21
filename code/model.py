@@ -158,12 +158,15 @@ def MT_CAN(nb_filters1, nb_filters2, input_shape, kernel_size=(3, 3), dropout_ra
 
 def TS_CAN(n_frame, nb_filters1, nb_filters2, input_shape, kernel_size=(3, 3), dropout_rate1=0.25, dropout_rate2=0.5,
            pool_size=(2, 2), nb_dense=128):
+    #motion input
     diff_input = Input(shape=input_shape)
+    #Average input
     rawf_input = Input(shape=input_shape)
-
+    # n_frame-> frame depth 10 
     d1 = TSM_Cov2D(diff_input, n_frame, nb_filters1, kernel_size, padding='same', activation='tanh')
     d2 = TSM_Cov2D(d1, n_frame, nb_filters1, kernel_size, padding='valid', activation='tanh')
-
+    
+    #apperance branch
     r1 = Conv2D(nb_filters1, kernel_size, padding='same', activation='tanh')(rawf_input)
     r2 = Conv2D(nb_filters1, kernel_size, activation='tanh')(r1)
 

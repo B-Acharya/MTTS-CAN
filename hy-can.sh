@@ -11,4 +11,4 @@
 #SBATCH --gpus=8
 source /home/bacharya/MTTS-CAN/tf-gpu/bin/activate
 export PYTHONPATH=${PYTHONPATH}:/home/bacharya/MTTS-CAN/
-srun python3 /home/bacharya/MTTS-CAN/code/train.py -exp long-hy-can-gpu -i /work/data/bacharya/cohface/ -o /home/bacharya/cohface/checkpoints/ -temp Hybrid_CAN 
+srun python3 /home/bacharya/MTTS-CAN/code/train-coh.py -exp long-hy-can-gpu -i /work/data/bacharya/cohface/ -o /home/bacharya/cohface/checkpoints/ -temp TS_CAN

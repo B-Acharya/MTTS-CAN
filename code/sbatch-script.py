@@ -15,12 +15,8 @@ for i in range(nums_jobs):
 	print(f"submiting job {i}")
 	if i == 0:
 		instruction = ["sbatch",f"--output={dataset}-{i}-multistep.log",
-					   f"--gpus={gpus}",f"--export=expname={exp_name}-{i}",
-					   f"data={data_path}",
-					   f"save_dir={save_chekpoints}",
-					   f"temporal={temp}",
-					   f"initial=0",
-					   f"train-multistep.sh"]
+					   f"--gpus={gpus}",f"--export=expname={exp_name}-{i},data={data_path},save_dir={save_chekpoints},temporal={temp},initial=0",
+					   "train-multistep.sh"]
 	else:
 		instruction = ["sbatch",f"--output={dataset}-{i}-multistep.log",
 					   f"--gpus={gpus}",f"--export=expname={exp_name}-{i}",

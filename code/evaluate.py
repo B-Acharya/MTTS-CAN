@@ -86,24 +86,27 @@ def evaluate(model_path, test_set, model_name):
         logging.info(f"Running on video {video_path}")
         print(video_path)
         sample_data_path = video_path
+        
+        #MTTS-CAN
+        if model_name=="MTTS-CAN":
+            dXsub = preprocess_raw_video(sample_data_path, dim=36)
+            print('dXsub shape', dXsub.shape)
 
-        dXsub = preprocess_raw_video(sample_data_path, dim=36)
-        print('dXsub shape', dXsub.shape)
+            dXsub_len = (dXsub.shape[0] // frame_depth)  * frame_depth
+            dXsub = dXsub[:dXsub_len, :, :, :]
 
-        dXsub_len = (dXsub.shape[0] // frame_depth)  * frame_depth
-        dXsub = dXsub[:dXsub_len, :, :, :]
+            model = MTTS_CAN(frame_depth, 32, 64, (img_rows, img_cols, 3))
+            model.load_weights(model_ckpt)
 
-        model = MTTS_CAN(frame_depth, 32, 64, (img_rows, img_cols, 3))
-        model.load_weights(model_ckpt)
+            yptest = model.predict((dXsub[:, :, :, :3], dXsub[:, :, :, -3:]), batch_size=batch_size, verbose=1)
 
-        yptest = model.predict((dXsub[:, :, :, :3], dXsub[:, :, :, -3:]), batch_size=batch_size, verbose=1)
+            pulse_pred = yptest[0]
+            pulse_pred = detrend(np.cumsum(pulse_pred), 100)
+            [b_pulse, a_pulse] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
+            pulse_pred = scipy.signal.filtfilt(b_pulse, a_pulse, np.double(pulse_pred))
+            pulse_pred = np.array(mms.fit_transform(pulse_pred.reshape(-1,1))).flatten()
 
-        pulse_pred = yptest[0]
-        pulse_pred = detrend(np.cumsum(pulse_pred), 100)
-        [b_pulse, a_pulse] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
-        pulse_pred = scipy.signal.filtfilt(b_pulse, a_pulse, np.double(pulse_pred))
-        pulse_pred = np.array(mms.fit_transform(pulse_pred.reshape(-1,1))).flatten()
-
+        #groud truth signal
         truth_path = video_path.replace(".avi","_dataFile.hdf5")
         gound_truth_file = h5py.File(truth_path, "r")
         pulse_truth = gound_truth_file["pulse"]   ### range ground truth from 0 to 1
@@ -132,6 +135,7 @@ def evaluate(model_path, test_set, model_name):
         mae = mean_absolute_error(bpm_pred, bpm_truth)
         logging.info(f"MAE, {mae}")
         error.append(mae)
+        gound_truth_file.close()
 
     return error
 
