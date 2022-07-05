@@ -19,7 +19,7 @@ from tensorflow import keras
 from data_generator import DataGenerator
 from model import HeartBeat, CAN, CAN_3D, Hybrid_CAN, TS_CAN, MTTS_CAN, \
     MT_Hybrid_CAN, MT_CAN_3D, MT_CAN
-from pre_process import get_nframe_video, split_subj, sort_video_list
+from pre_process import get_nframe_video, split_subj_, sort_dataFile_list_
 
 
 
@@ -28,13 +28,16 @@ os.environ['TF_DETERMINISTIC_OPS'] = '1'
 os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
 
 #for reproducibility 
-tf.config.experimental.enable_op_determinism()
-seed = 49
-tf.keras.utils.set_random_seed(seed)
-
+#tf.config.experimental.enable_op_determinism()
+seed = 100
 tf.test.is_gpu_available()
+tf.keras.utils.set_random_seed(seed)
+list_gpu = tf.config.list_physical_devices('GPU')
+print("List of gpus are", list_gpu)
 tf.keras.backend.clear_session()
 print(tf.__version__)
+list_gpu = tf.config.list_physical_devices('GPU')
+
 
 # %%
 parser = argparse.ArgumentParser()
@@ -42,6 +45,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-exp', '--exp_name', type=str,
                     help='experiment name')
 parser.add_argument('-i', '--data_dir', type=str, help='Location for the dataset')
+parser.add_argument('-database_name', '--database_name', type=str, help='which dataset',default="PURE")
+
 parser.add_argument('-inter', '--inter_dir', type=str, help='intermediate saving location for the data')
 parser.add_argument('-o', '--save_dir', type=str, default='./rPPG-checkpoints',
                     help='Location for parameter checkpoints and samples')
@@ -59,7 +64,7 @@ parser.add_argument('-e', '--nb_dense', type=int, default=128,
                     help='number of dense units')
 parser.add_argument('-f', '--cv_split', type=int, default=0,
                     help='cv_split')
-parser.add_argument('-g', '--nb_epoch', type=int, default=5,
+parser.add_argument('-g', '--nb_epoch', type=int, default=4,
                     help='nb_epoch')
 parser.add_argument('-t', '--nb_task', type=int, default=12,
                     help='nb_task')
@@ -80,15 +85,7 @@ parser.add_argument('-init', '--initial', type=int, default=0,
 args = parser.parse_args()
 print('input args:\n', json.dumps(vars(args), indent=4, separators=(',', ':')))  # pretty print args
 
-# %% Spliting Data
-
-print('Spliting Data...')
-subNum = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 25, 26, 27])
-taskList = list(range(1, args.nb_task+1))
-
 # %% Training
-
-
 def train(args, subTrain, subTest, cv_split, img_rows=36, img_cols=36):
     print('================================')
     print('Train...')
@@ -100,40 +97,47 @@ def train(args, subTrain, subTest, cv_split, img_rows=36, img_cols=36):
     path_of_video_tr = subTrain
     path_of_video_test = subTest 
 
+
+    strategy = tf.distribute.MirroredStrategy()
+    print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
+    print(args.data_dir, subTrain[0])
+    path_of_video_tr = sort_dataFile_list_(args.data_dir, subTrain, args.database_name, trainMode=True)
+    path_of_video_test = sort_dataFile_list_(args.data_dir, subTest, args.database_name, trainMode=True)
+
     print('sample path: ', path_of_video_tr[0])
     nframe_per_video = get_nframe_video(path_of_video_tr[0])
     print('Trian Length: ', len(path_of_video_tr))
     print('Test Length: ', len(path_of_video_test))
     print('nframe_per_video', nframe_per_video)
 
-    strategy = tf.distribute.MirroredStrategy()
+    print('Train length', len(path_of_video_tr))
+    print('Test length', len(path_of_video_test))
+    if len(list_gpu) > 1:
+        print("Using MultiWorkerMirroredStrategy")
+        strategy = tf.distribute.MultiWorkerMirroredStrategy()
+    else: 
+        print("Using MirroredStrategy")
+        strategy = tf.distribute.MirroredStrategy()
     print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
-
     with strategy.scope():
         #added Bhargav
-        args.batch_size = 8 
         if strategy.num_replicas_in_sync == 4:
             print("Using 4 GPUs for training")
             if args.temporal == 'CAN' or args.temporal == 'MT_CAN':
-                args.batch_size = 32
+                args.batch_size = 16
             elif args.temporal == 'CAN_3D' or args.temporal == 'MT_CAN_3D':
-                args.batch_size = 12
+                args.batch_size = 2
             elif args.temporal == 'TS_CAN' or args.temporal == 'MTTS_CAN':
-                args.batch_size = 32
+                args.batch_size = 12
             elif args.temporal == 'Hybrid_CAN' or args.temporal == 'MT_Hybrid_CAN':
-                print("bitch")
-                #Added to run on gpu to cover the batch size
-                args.batch_size = 4
-                #args.batch_size = 16
+                args.batch_size = 2
             else:
                 raise ValueError('Unsupported Model Type!')
         elif strategy.num_replicas_in_sync == 8:
             print('Using 8 GPUs for training!')
-            args.batch_size = args.batch_size * 2
+            args.batch_size = 1
         elif strategy.num_replicas_in_sync == 2:
-	    #TODO:check later why it wont work above
             args.batch_size = 4
-            args.batch_size = args.batch_size // 2
         else:
             raise Exception('Only supporting 4 GPUs or 8 GPUs now. Please adjust learning rate in the training script!')
         if args.initial:
@@ -186,7 +190,7 @@ def train(args, subTrain, subTest, cv_split, img_rows=36, img_cols=36):
                 raise ValueError('Unsupported Model Type!')
         else:
             print("Loading old model")
-            model = keras.models.load_model('/home/bacharya/PURE/models/')
+            model = keras.models.load_model(args.inter_dir)
         #optimizer = tf.python.keras.optimizers.Adadelta(learning_rate=args.lr)
         if args.initial:
             optimizer = Adadelta(learning_rate=args.lr)
@@ -205,10 +209,10 @@ def train(args, subTrain, subTest, cv_split, img_rows=36, img_cols=36):
         # %% Create data genener
         training_generator = DataGenerator(path_of_video_tr, nframe_per_video, (img_rows, img_cols),
                                            batch_size=args.batch_size, frame_depth=args.frame_depth,
-                                           temporal=args.temporal, respiration=args.respiration, shuffle = False)
+                                           temporal=args.temporal, respiration=args.respiration, shuffle = True, dataset="PURE")
         validation_generator = DataGenerator(path_of_video_test, nframe_per_video, (img_rows, img_cols),
                                              batch_size=args.batch_size, frame_depth=args.frame_depth,
-                                             temporal=args.temporal, respiration=args.respiration, shuffle= False)
+                                             temporal=args.temporal, respiration=args.respiration, shuffle= True, dataset="PURE")
         # %%  Checkpoint Folders
         checkpoint_folder = str(os.path.join(args.save_dir, args.exp_name))
         if not os.path.exists(checkpoint_folder):
@@ -260,17 +264,17 @@ def train(args, subTrain, subTest, cv_split, img_rows=36, img_cols=36):
         print('****************************************')
         print('Start saving predicitions from the last epoch')
 
-        training_generator = DataGenerator(path_of_video_tr, nframe_per_video, (img_rows, img_cols),
-                                           batch_size=args.batch_size, frame_depth=args.frame_depth,
-                                           temporal=args.temporal, respiration=args.respiration, shuffle=False)
+        #training_generator = DataGenerator(path_of_video_tr, nframe_per_video, (img_rows, img_cols),
+        #                                   batch_size=args.batch_size, frame_depth=args.frame_depth,
+        #                                   temporal=args.temporal, respiration=args.respiration, shuffle=False)
 
         validation_generator = DataGenerator(path_of_video_test, nframe_per_video, (img_rows, img_cols),
                                              batch_size=args.batch_size, frame_depth=args.frame_depth,
-                                             temporal=args.temporal, respiration=args.respiration, shuffle=False)
+                                             temporal=args.temporal, respiration=args.respiration, shuffle=False, dataset="PURE")
 
-        yptrain = model.predict(training_generator, verbose=1)
-        scipy.io.savemat(checkpoint_folder + '/yptrain_best_' + '_cv' + str(cv_split) + '.mat',
-                         mdict={'yptrain': yptrain})
+        #yptrain = model.predict(training_generator, verbose=1)
+        #scipy.io.savemat(checkpoint_folder + '/yptrain_best_' + '_cv' + str(cv_split) + '.mat',
+        #                 mdict={'yptrain': yptrain})
         yptest = model.predict(validation_generator, verbose=1)
         scipy.io.savemat(checkpoint_folder + '/yptest_best_' + '_cv' + str(cv_split) + '.mat',
                          mdict={'yptest': yptest})
@@ -284,12 +288,9 @@ def get_video_list(path,basepath):
     with open(path,"r") as f:
         for line in f.readlines():
             #TODO: update the cohface directory to have - and not _
-            videoPaths.append(basepath+ "-".join(line.strip("\n").strip("data").strip("/").split("/"))+".hdf5")
+            videoPaths.append(basepath+ "_".join(line.strip("\n").strip("data").strip("/").split("/"))+".hdf5")
     return videoPaths
 
 print('Using Split ', str(args.cv_split))
-subTrain = get_video_list("/home/bacharya/PURE/train.csv",args.data_dir)
-subTest = get_video_list("/home/bacharya/PURE/dev.csv", args.data_dir)
-#subTrain = get_video_list("/work/data/bacharya/cohface/protocols/all/train.txt",args.data_dir)
-#subTest = get_video_list("/work/data/bacharya/cohface/protocols/all/dev.txt", args.data_dir)
-train(args, subTrain, subTest, args.cv_split)
+subTrain, subDev, subTest = split_subj_("/home/bacharya/raw_zip/zip/", "PURE")
+train(args, subTrain, subDev, args.cv_split)

@@ -105,6 +105,8 @@ def evaluate(model_path, test_set, model_name):
             [b_pulse, a_pulse] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
             pulse_pred = scipy.signal.filtfilt(b_pulse, a_pulse, np.double(pulse_pred))
             pulse_pred = np.array(mms.fit_transform(pulse_pred.reshape(-1,1))).flatten()
+        else if model_name=="CAN_3D":
+            
 
         #groud truth signal
         truth_path = video_path.replace(".avi","_dataFile.hdf5")

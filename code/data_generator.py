@@ -27,7 +27,7 @@ def get_frame_sum(list_vid, maxLen_Video):
 class DataGenerator(keras.utils.Sequence):
     'Generates data for Keras'
     def __init__(self, paths_of_videos, maxlen, dim, batch_size=32, frame_depth=10,
-                 shuffle=True, temporal=True, respiration=0):
+                 shuffle=True, temporal=True, respiration=0, dataset=None):
         self.dim = dim
         self.batch_size = batch_size
         self.paths_of_videos = paths_of_videos
@@ -38,6 +38,7 @@ class DataGenerator(keras.utils.Sequence):
         self.frame_depth = frame_depth
         self.respiration = respiration
         self.on_epoch_end()
+        self.dataset = dataset
 
     def __len__(self):
         'Denotes the number of batches per epoch'
@@ -209,11 +210,15 @@ class DataGenerator(keras.utils.Sequence):
         #    output = (motion_data, apperance_data)
 
         elif self.temporal == 'TS_CAN':
-            nframe_per_video = get_max_frame(list_video_temp)
-            if nframe_per_video>1200:
-                data_len = 1200
-            else:
-                data_len = 1100
+            if self.dataset=="COHFACE":
+                nframe_per_video = get_max_frame(list_video_temp)
+                if nframe_per_video>1200:
+                    data_len = 1200
+                else:
+                    data_len = 1100
+            elif self.dataset == "PURE":
+                data_len = 1800
+            
             print("Here", list_video_temp)
             data = np.zeros((data_len* len(list_video_temp), self.dim[0], self.dim[1], 6), dtype=np.float32)
             label = np.zeros((data_len* len(list_video_temp), 1), dtype=np.float32)
@@ -291,11 +296,8 @@ class DataGenerator(keras.utils.Sequence):
             output = (motion_data, apperance_data)
             label = (label_y, label_r)
         elif self.temporal == 'Hybrid_CAN':
+            print(list_video_temp)
             nframe_per_video = get_max_frame(list_video_temp)
-            if nframe_per_video>1200:
-                data_len = 1200
-            else:
-                data_len = 1100
             num_window = nframe_per_video - (self.frame_depth + 1)
             data = np.zeros((num_window*len(list_video_temp), self.dim[0], self.dim[1], self.frame_depth, 6),
                             dtype=np.float32)
@@ -324,6 +326,7 @@ class DataGenerator(keras.utils.Sequence):
 def get_max_frame(video):
     maxlen = float('inf') 
     for video_path in video:
+        print(video_path)
         hf = h5py.File(video_path, 'r')
         nframe_per_video = np.array(hf['data']).shape[0]
         hf.close()

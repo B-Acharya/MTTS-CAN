@@ -45,7 +45,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-exp', '--exp_name', type=str,
                     help='experiment name')
 parser.add_argument('-i', '--data_dir', type=str, help='Location for the dataset')
-parser.add_argument('-database_name', '--database_name', type=str, help='which dataset',default="COHFACE")
+parser.add_argument('-database_name', '--database_name', type=str, help='which dataset',default="VIPL")
 
 parser.add_argument('-inter', '--inter_dir', type=str, help='intermediate saving location for the data')
 parser.add_argument('-o', '--save_dir', type=str, default='./rPPG-checkpoints',
@@ -64,7 +64,7 @@ parser.add_argument('-e', '--nb_dense', type=int, default=128,
                     help='number of dense units')
 parser.add_argument('-f', '--cv_split', type=int, default=0,
                     help='cv_split')
-parser.add_argument('-g', '--nb_epoch', type=int, default=2,
+parser.add_argument('-g', '--nb_epoch', type=int, default=1,
                     help='nb_epoch')
 parser.add_argument('-t', '--nb_task', type=int, default=12,
                     help='nb_task')
@@ -135,7 +135,7 @@ def train(args, subTrain, subTest, cv_split, img_rows=36, img_cols=36):
                 raise ValueError('Unsupported Model Type!')
         elif strategy.num_replicas_in_sync == 8:
             print('Using 8 GPUs for training!')
-            args.batch_size = 1
+            args.batch_size = 8
         elif strategy.num_replicas_in_sync == 2:
             args.batch_size = 4
         else:
@@ -292,5 +292,6 @@ def get_video_list(path,basepath):
     return videoPaths
 
 print('Using Split ', str(args.cv_split))
-subTrain, subDev, subTest = split_subj_("/work/data/bacharya/cohface/", "COHFACE")
+subTrain, subDev, subTest = split_subj_("/home/bacharya/vipl/", "VIPL")
+print(subTrain, subDev, subTest)
 train(args, subTrain, subDev, args.cv_split)

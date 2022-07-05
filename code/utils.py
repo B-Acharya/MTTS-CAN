@@ -10,6 +10,46 @@ This module contains all the class and the methods for transforming
 a BVP signal in a BPM signal.
 Adapted code from pyVHR
 """
+def RMSEerror(bpmES, bpmGT, timesES=None, timesGT=None):
+    """ Computes RMSE """
+
+    diff = bpm_diff(bpmES, bpmGT, timesES, timesGT)
+    n, m = diff.shape  # n = num channels, m = bpm length
+    df = np.zeros(n)
+    for j in range(m):
+        for c in range(n):
+            df[c] += np.power(diff[c, j], 2)
+
+    # -- final RMSE
+    RMSE = np.sqrt(df/m)
+    return RMSE
+
+
+def MAEerror(bpmES, bpmGT, timesES=None, timesGT=None):
+    """ Computes MAE """
+
+    diff = bpm_diff(bpmES, bpmGT, timesES, timesGT)
+    n, m = diff.shape  # n = num channels, m = bpm length
+    df = np.sum(np.abs(diff), axis=1)
+
+    # -- final MAE
+    MAE = df/m
+    return MAE
+
+def bpm_diff(bpmES, bpmGT, timesES=None, timesGT=None):
+    n, m = bpmES.shape  # n = num channels, m = bpm length
+
+    if (timesES is None) or (timesGT is None):
+        timesES = np.arange(m)
+        timesGT = timesES
+
+    diff = np.zeros((n, m))
+    for j in range(m):
+        t = timesES[j]
+        i = np.argmin(np.abs(t-timesGT))
+        for c in range(n):
+            diff[c, j] = bpmGT[i]-bpmES[c, j]
+    return diff
 
 class BVPsignal:
     """

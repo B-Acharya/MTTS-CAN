@@ -13,40 +13,18 @@ import shutil
 import zipfile
 
 def hr_analysis(path, hr_discrete, frames_vid, fps_vid,nr=None):
-    mms= MinMaxScaler()
-    # mean = hr_discrete.mean()
-    # std = np.std(hr_discrete)
+    #no mms
+    hrdata_res = np.array(signal.resample(hr_discrete, frames_vid))
     
-    # upper_limit = mean + std*3
-    # lower_limit = mean - std*3
-
-    # for x in range(0, len(hr_discrete)):
-    #     if hr_discrete[x] > upper_limit:
-    #         hr_discrete[x] = upper_limit
-    #     elif hr_discrete[x] < lower_limit:
-    #         hr_discrete[x] = lower_limit
-
-    #hrdata_res = np.array(signal.resample(hr_discrete, frames_vid))
-    hrdata_res = np.array(mms.fit_transform(hr_discrete.reshape(-1,1))).flatten() # normalization
-    
-    working_data, measures = hp.process(hrdata_res, fps_vid, calc_freq=True)
-
-    plot =  hp.plotter(working_data, measures, show=False, title = 'Heart Rate Signal and Peak Detection')
-    if nr ==None:
-        path = path.strip("data.avi") + 'plot_truthData.jpg'
-    else:
-        path = path.replace('vid', 'plot_truthData_' + str(nr)).replace('.avi', '.jpg').strip('data') +'plot_truthData.jpg'
-    plot.savefig(path)
-
-    return working_data, measures
+    return hrdata_res
 
 def dataSet_preprocess(vid, name):
     if name== "COHFACE":
         if os.path.exists(str(vid).replace(".avi", "_vid.hdf5")):
             os.remove(str(vid).replace(".avi", "_vid.hdf5"))
             print("deleted")
-        if os.path.exists(str(vid).replace(".avi", "_dataFile.hdf5")):
-            os.remove(str(vid).replace(".avi", "_dataFile.hdf5"))
+        if os.path.exists(str(vid).replace(".avi", "_dataFile_NONR.hdf5")):
+            os.remove(str(vid).replace(".avi", "_dataFile_NONR.hdf5"))
             print("deleted")
             
         dXsub, fps = preprocess_raw_video_(vid, 36)
@@ -138,31 +116,18 @@ def dataSet_preprocess(vid, name):
 
 def process_save(nframesPerVideo, fps, dXsub, pulse, vid,database):
     # HR and HRV analysis
-    working_data, measures = hr_analysis(vid, pulse, nframesPerVideo, fps)
+    working_data = hr_analysis(vid, pulse, nframesPerVideo, fps)
     
     # Data for H5PY
-    pulse_res = working_data['hr'] # resampled  and normalized HR
-    nn_list = working_data['RR_list_cor'] # nn-intervals
-    parameter = str(measures) # HR and HRV Parameter
-
-    peak_list = working_data['peaklist']
-    if not isinstance(peak_list, list):
-        peak_list = peak_list.tolist()
-    removed = working_data['removed_beats']
-    for item in removed:
-        peak_list.remove(item) # list with position of the peaks
-    
+    pulse_res = working_data # resampled  and normalized HR
     ##### save data ######
     if database=="COHFACE":
-        newPath_name = str(vid).replace(".avi", "_dataFile.hdf5")
+        newPath_name = str(vid).replace(".avi", "_dataFile_NONR.hdf5")
         if (str(vid).find("UBFC") >=0):
             newPath_name = newPath_name.replace("vid_", "")
         data_file = h5py.File(newPath_name, 'a')
         data_file.create_dataset('data', data=dXsub)  # write the data to hdf5 file
         data_file.create_dataset('pulse', data=pulse_res)
-        data_file.create_dataset('peaklist', data=peak_list)
-        data_file.create_dataset('nn', data=nn_list)
-        data_file.create_dataset('parameter', data=parameter)
         data_file.close()
 
     if database == "PURE":
@@ -276,6 +241,7 @@ def prepare_database(name, tasks, data_dir):
     subTrain, subDev, subTest = split_subj_(data_dir, name)
     print("subTrain:   ", subTrain)
     print("subTest:   ", subTest)
+    print("tasklist  ", taskList)
     video_path_list_tr  = sort_video_list_(data_dir, taskList, subTrain, name)
     video_path_list_test  = sort_video_list_(data_dir, taskList, subTest, name)
     video_path_list_val  = sort_video_list_(data_dir, taskList, subDev, name)
