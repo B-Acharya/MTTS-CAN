@@ -109,8 +109,8 @@ def dataFile_COHFACE(data_dir, subTrain, train):
     final = []
     if train:
         for p in subTrain:
-            #x = glob.glob(os.path.join(data_dir, str(p),  '*dataFile.hdf5'))
-            x = glob.glob(os.path.join(data_dir, str(p),  '*dataFile_NONR.hdf5'))
+            x = glob.glob(os.path.join(data_dir, str(p),  '*dataFile.hdf5'))
+            # x = glob.glob(os.path.join(data_dir, str(p),  '*dataFile_NONR.hdf5'))
             x = sorted(x)
             #x = sorted(x, key=take_last_ele)
             final.append(x)
