@@ -1,3 +1,4 @@
+import pathlib
 from aifc import Error
 import numpy as np
 import scipy.io
@@ -18,12 +19,12 @@ from utils import BVPsignal , RMSEerror, MAEerror
 import pickle
 
 
-import heartpy as hp
+# import heartpy as hp
 
 '''Code adapted from https://raw.githubusercontent.com/KISMED-TUDa/rPPG-CANs/main/code/final_evaluation.py'''
 
 def write_header(worksheet):
-    header = ['Database','p', 'MAE', 'RMSE']
+    header = ['Database','name','p', 'MAE', 'RMSE', 'HR_predicted', 'HR_GT']
     for index in range(len(header)):
         worksheet.write(0,index, header[index])
 
@@ -46,6 +47,29 @@ def prepare_Hybrid_CAN(dXsub):
     motion_data = tempX[:, :, :, :, :3]
     apperance_data = np.average(tempX[:, :, :, :, -3:], axis=-2)
     return motion_data, apperance_data
+
+def plot_signals(pulse_pred, pulse_truth, save_path, dataset, model_name):
+    fib, ax = plt.subplots(2, 1)
+    ax[0].plot(pulse_pred)
+    ax[1].plot(pulse_truth)
+    ax[0].title.set_text("Prediction")
+    ax[1].title.set_text("Groung Truth")
+    if dataset =="VIPL":
+        directory = pathlib.Path("/home/bacharya/MTTS-CAN/code/Predictions/vipl/"+model_name+"/")
+        directory.mkdir(exist_ok=True)
+        save_path = save_path.stem
+        plt.savefig(directory / save_path )
+    elif dataset == "PURE":
+        directory = pathlib.Path("/home/bacharya/MTTS-CAN/code/Predictions/PURE/"+model_name+"/")
+        directory.mkdir(exist_ok=True)
+        save_path = save_path.stem
+        plt.savefig(directory / save_path )
+    elif dataset == "COHFACE":
+        directory = pathlib.Path("/home/bacharya/MTTS-CAN/code/Predictions/cohface/"+model_name+"/")
+        directory.mkdir(exist_ok=True)
+        save_path = save_path.parent.stem + "_"+save_path.parent.parent.stem
+        plt.savefig(directory / save_path )
+
 
 def predict_vitals(worksheet, test_name, model_name, video_path, path_results, model_checkpoint_path,database_name):
     mms = MinMaxScaler()
@@ -86,7 +110,14 @@ def predict_vitals(worksheet, test_name, model_name, video_path, path_results, m
         
             dXsub_len = (dXsub.shape[0] // frame_depth)  * frame_depth
             dXsub = dXsub[:dXsub_len, :, :, :]
+            fs = 20
         elif database_name=="PURE":
+            data = h5py.File(sample_data_path, "r")
+            dXsub = np.array(data["data"])
+            dXsub_len = (dXsub.shape[0] // frame_depth)  * frame_depth
+            dXsub = dXsub[:dXsub_len, :, :, :]
+            fs = 30
+        elif database_name=="VIPL":
             data = h5py.File(sample_data_path, "r")
             dXsub = np.array(data["data"])
             dXsub_len = (dXsub.shape[0] // frame_depth)  * frame_depth
@@ -95,7 +126,6 @@ def predict_vitals(worksheet, test_name, model_name, video_path, path_results, m
         else:
             print("Database not implemented")
 
-        
         if model_name == "CAN_3D":
             dXsub = prepare_3D_CAN(dXsub)
             dXsub_len = (dXsub.shape[0] // (frame_depth))  * (frame_depth)
@@ -133,12 +163,23 @@ def predict_vitals(worksheet, test_name, model_name, video_path, path_results, m
         [b_pulse_pred, a_pulse_pred] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
         pulse_pred = scipy.signal.filtfilt(b_pulse_pred, a_pulse_pred, np.double(pulse_pred))
         pulse_pred = np.array(mms.fit_transform(pulse_pred.reshape(-1,1))).flatten()
-        
+        #overall heartrate
+        N = 30 * fs
+        pulse_fft = np.expand_dims(pulse_pred, 0)
+        f, pxx = signal.periodogram(pulse_fft, fs=fs, nfft=4 * N, detrend=False)
+        fmask = np.argwhere((f >= 0.75) & (f <= 2.5))  # regular Heart beat are 0.75*60 and 2.5*60
+        frange = np.take(f, fmask)
+        HR = np.take(frange, np.argmax(np.take(pxx, fmask), 0))[0] * 60
+
         ##### ground truth data resampled  #######
         if(database_name == "COHFACE"):
             truth_path = sample_data_path.replace(".avi", ".hdf5")   # akutell für COHACE...
             truth_path_data = truth_path.replace(".hdf5", "_dataFile.hdf5")   # akutell für COHACE...
+            print(truth_path_data)
         elif database_name == "PURE":
+            truth_path = sample_data_path
+            truth_path_data = sample_data_path
+        elif database_name == "VIPL":
             truth_path = sample_data_path
             truth_path_data = sample_data_path
         else:
@@ -146,6 +187,20 @@ def predict_vitals(worksheet, test_name, model_name, video_path, path_results, m
         data = h5py.File(truth_path,"r")
         pulse_truth = np.array(data["pulse"])
         data.close()
+        plot_signals(pulse_pred,pulse_truth, pathlib.Path(sample_data_path), database_name,model_name)
+
+        pulse_truth = detrend(np.cumsum(pulse_truth), 100)
+        [b_pulse_pred, a_pulse_pred] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
+        pulse_truth = scipy.signal.filtfilt(b_pulse_pred, a_pulse_pred, np.double(pulse_truth))
+        #pulse_truth = np.array(mms.fit_transform(pulse_truth.reshape(-1,1))).flatten()
+
+
+
+        pulse_fft = np.expand_dims(pulse_truth, 0)
+        f, pxx = signal.periodogram(pulse_fft, fs=fs, nfft=4 * N, detrend=False)
+        fmask = np.argwhere((f >= 0.75) & (f <= 2.5))  # regular Heart beat are 0.75*60 and 2.5*60
+        frange = np.take(f, fmask)
+        HR_GT = np.take(frange, np.argmax(np.take(pxx, fmask), 0))[0] * 60
         ########### BPM ###########
         bvp = BVPsignal(pulse_pred.reshape(1,len(pulse_pred)),fs)
         BPM, times = bvp.getBPM(winsize=10)
@@ -155,6 +210,9 @@ def predict_vitals(worksheet, test_name, model_name, video_path, path_results, m
         elif database_name =="PURE":
             bvpGT = BVPsignal(pulse_truth.reshape(1, len(pulse_truth)), 30)
             BPMGT, timesGT = bvpGT.getBPM(winsize=10)
+        elif database_name =="VIPL":
+            bvpGT = BVPsignal(pulse_truth.reshape(1, len(pulse_truth)), 30)
+            BPMGT, timesGT = bvpGT.getBPM(winsize=10)
         print(times, timesGT)
         ######## name files #############
         if(database_name=="COHFACE"):
@@ -162,15 +220,8 @@ def predict_vitals(worksheet, test_name, model_name, video_path, path_results, m
             print(nameStr)
         elif database_name=="PURE":
             nameStr = str(sample_data_path).replace("_dataFile.hdf5", "")
-        elif(str(sample_data_path).find("UBFC-PHYS") > 0):
-            nmr = str(sample_data_path).find("UBFC-PHYS")
-            nameStr = str(sample_data_path)[nmr + 12:].replace("\\", "-").replace("vid_", "").replace(".avi", "")
-        elif(str(sample_data_path).find("UBFC") > 0):
-            nmr = str(sample_data_path).find("UBFC")
-            nameStr = str(sample_data_path)[nmr + 5:].replace("\\", "-").replace("vid.avi", "")
-        elif(str(sample_data_path).find("BP4D") > 0):
-            nmr = str(sample_data_path).find("BP4D")
-            nameStr = str(sample_data_path)[nmr + 5:].replace("\\", "-")
+        elif database_name == "VIPL":
+            nameStr = str(sample_data_path).replace(".hdf5", "")
         else:
             raise ValueError
         ########## Plot ##################
@@ -195,9 +246,11 @@ def predict_vitals(worksheet, test_name, model_name, video_path, path_results, m
             counter_video += 1
         worksheet.write(counter_video,0, database_name)
         worksheet.write(counter_video,1, nameStr)
-        worksheet.write(counter_video,4, p[0])
-        worksheet.write(counter_video,5, MAE)
-        worksheet.write(counter_video,6, RMSE)
+        worksheet.write(counter_video,2, p[0])
+        worksheet.write(counter_video,3, MAE)
+        worksheet.write(counter_video,4, RMSE)
+        worksheet.write(counter_video,5, HR)
+        worksheet.write(counter_video,6, HR_GT)
         list_bpm[sample_data_path] = [BPM, times, BPMGT, timesGT]
         counter_video += 1
         old_database = database_name
@@ -205,38 +258,55 @@ def predict_vitals(worksheet, test_name, model_name, video_path, path_results, m
         pickle.dump(list_bpm, output) 
    
 if __name__ == "__main__":
-    #database_name = "COHFACE"
-    database_name = "PURE"
+    database_name = "COHFACE"
+    #database_name = "VIPL"
+    #database_name = "PURE"
     if database_name=="PURE":
+        model_checkpoints = [("Hybrid_CAN","/home/bacharya/PURE/checkpoints/normalized-PURE-Hybrid_CAN-4-19/cv_0_epoch02_model.tf"),
+                             ("TS_CAN","/home/bacharya/PURE/checkpoints/normalized-PURE-TS_CAN-4-19/cv_0_epoch02_model.tf"),
+                             ("CAN_3D","/home/bacharya/PURE/checkpoints/normalized-PURE-CAN_3D-4-19/cv_0_epoch02_model.tf")]
         path_results = "/home/bacharya/PURE/predictions/"
-        model_checkpoint = "/home/bacharya/PURE/checkpoints/short-PURE-TS_CAN-4-19/cv_0_epoch02_model.tf"
         data_dir = '/home/bacharya/PURE/'
         subTrain, subDev, subTest = split_subj_(data_dir, "PURE")
         path_of_video_test = sort_dataFile_list_(data_dir, subTest, "PURE", trainMode=True)
         save_dir = '/home/bacharya/PURE/predictions/'
-        test_name = "PURE-old-split"
+        test_name = "PURE-Normalized-split"
     elif database_name=="COHFACE":
         path_results = "/home/bacharya/cohface/predictions/"
+        model_checkpoints = [("Hybrid_CAN","/home/bacharya/cohface/checkpoints/old-split-with-normalization/short-cohface-Hybrid_CAN-4-19/cv_0_epoch02_model.tf"),
+                             ("TS_CAN","/home/bacharya/cohface/checkpoints/old-split-with-normalization/short-cohface-TS_CAN-4-19/cv_0_epoch02_model.tf"),
+                             ("CAN_3D","/home/bacharya/cohface/checkpoints/old-split-with-normalization/short-cohface-CAN_3D-4-19/cv_0_epoch02_model.tf")]
         model_checkpoint = "/home/bacharya/cohface/checkpoints/short-cohface-CAN_3D-4-39/cv_0_epoch01_model.tf"
         data_dir = '/work/data/bacharya/cohface/'
         subTrain, subDev, subTest = split_subj_(data_dir, "COHFACE")
         path_of_video_test = sort_dataFile_list_(data_dir, subTest, "COHFACE", trainMode=False)
         save_dir = '/home/bacharya/cohface/predictions/'
-        test_name = "cohface-old-split"
-    print(path_of_video_test)
-    print(subTest)
-    model_name = "TS_CAN"
-    # neuer Ordner für Tests
-    os.chdir(save_dir)
-    try:
-        os.makedirs(str(test_name))
-    except:
-        print("Directory exists...")
-    save_path = os.path.join(save_dir, str(test_name))
-    os.chdir(save_path)
-    workbook = xlsxwriter.Workbook(model_name+ ".xlsx")
-    worksheet = workbook.add_worksheet("Results")
-    write_header(worksheet)
-    predict_vitals(worksheet, test_name, model_name, path_of_video_test, path_results, model_checkpoint , database_name)
-    print("Ready with this model")
-    workbook.close()
+        test_name = "cohface-old-split-with-normalization"
+    elif database_name=="VIPL":
+        path_results = "/home/bacharya/vipl/predictions/"
+        model_checkpoints = [("Hybrid_CAN","/home/bacharya/vipl/checkpoints/short-VIPL-Hybrid_CAN-4-39/cv_0_epoch01_model.tf/"),
+                             ("TS_CAN","/home/bacharya/vipl/checkpoints/short-VIPL-TS_CAN-4-32/cv_0_epoch01_model.tf/"),
+                             ("CAN_3D","/home/bacharya/vipl/checkpoints/short-VIPL-CAN_3D-4-39/cv_0_epoch01_model.tf/")]
+        data_dir = '/home/bacharya/vipl/hdf5/'
+        split_path = '/home/bacharya/vipl/'
+        subTrain, subDev, subTest = split_subj_(split_path, "VIPL")
+        path_of_video_test = sort_dataFile_list_(data_dir, subTest, "VIPL", trainMode=True)
+        save_dir = '/home/bacharya/vipl/predictions/'
+        test_name = "VIPL-split"
+    ####
+    for model_name, model_checkpoint in model_checkpoints:
+        print(path_of_video_test)
+        print(subTest)
+        os.chdir(save_dir)
+        try:
+            os.makedirs(str(test_name))
+        except:
+            print("Directory exists...")
+        save_path = os.path.join(save_dir, str(test_name))
+        os.chdir(save_path)
+        workbook = xlsxwriter.Workbook(model_name+ ".xlsx")
+        worksheet = workbook.add_worksheet("Results")
+        write_header(worksheet)
+        predict_vitals(worksheet, test_name, model_name, path_of_video_test, path_results, model_checkpoint , database_name)
+        print("Ready with this model")
+        workbook.close()
