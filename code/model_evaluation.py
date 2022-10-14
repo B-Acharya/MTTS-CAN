@@ -160,14 +160,14 @@ def predict_vitals(worksheet, test_name, model_name, video_path, path_results, m
             pulse_pred = yptest[0]
         
         pulse_pred = detrend(np.cumsum(pulse_pred), 100)
-        [b_pulse_pred, a_pulse_pred] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
+        [b_pulse_pred, a_pulse_pred] = butter(1, [0.75 / fs * 2, 3.5 / fs * 2], btype='bandpass')
         pulse_pred = scipy.signal.filtfilt(b_pulse_pred, a_pulse_pred, np.double(pulse_pred))
         pulse_pred = np.array(mms.fit_transform(pulse_pred.reshape(-1,1))).flatten()
         #overall heartrate
         N = 30 * fs
         pulse_fft = np.expand_dims(pulse_pred, 0)
         f, pxx = signal.periodogram(pulse_fft, fs=fs, nfft=4 * N, detrend=False)
-        fmask = np.argwhere((f >= 0.75) & (f <= 2.5))  # regular Heart beat are 0.75*60 and 2.5*60
+        fmask = np.argwhere((f >= 0.75) & (f <= 3.5))  # regular Heart beat are 0.75*60 and 2.5*60
         frange = np.take(f, fmask)
         HR = np.take(frange, np.argmax(np.take(pxx, fmask), 0))[0] * 60
 
@@ -190,7 +190,7 @@ def predict_vitals(worksheet, test_name, model_name, video_path, path_results, m
         plot_signals(pulse_pred,pulse_truth, pathlib.Path(sample_data_path), database_name,model_name)
 
         pulse_truth = detrend(np.cumsum(pulse_truth), 100)
-        [b_pulse_pred, a_pulse_pred] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
+        [b_pulse_pred, a_pulse_pred] = butter(1, [0.75 / fs * 2, 3.5 / fs * 2], btype='bandpass')
         pulse_truth = scipy.signal.filtfilt(b_pulse_pred, a_pulse_pred, np.double(pulse_truth))
         #pulse_truth = np.array(mms.fit_transform(pulse_truth.reshape(-1,1))).flatten()
 
@@ -198,7 +198,7 @@ def predict_vitals(worksheet, test_name, model_name, video_path, path_results, m
 
         pulse_fft = np.expand_dims(pulse_truth, 0)
         f, pxx = signal.periodogram(pulse_fft, fs=fs, nfft=4 * N, detrend=False)
-        fmask = np.argwhere((f >= 0.75) & (f <= 2.5))  # regular Heart beat are 0.75*60 and 2.5*60
+        fmask = np.argwhere((f >= 0.75) & (f <= 3.5))  # regular Heart beat are 0.75*60 and 2.5*60
         frange = np.take(f, fmask)
         HR_GT = np.take(frange, np.argmax(np.take(pxx, fmask), 0))[0] * 60
         ########### BPM ###########
@@ -261,6 +261,7 @@ if __name__ == "__main__":
     database_name = "COHFACE"
     #database_name = "VIPL"
     #database_name = "PURE"
+    database_name = "PURE_LOO"
     if database_name=="PURE":
         model_checkpoints = [("Hybrid_CAN","/home/bacharya/PURE/checkpoints/normalized-PURE-Hybrid_CAN-4-19/cv_0_epoch02_model.tf"),
                              ("TS_CAN","/home/bacharya/PURE/checkpoints/normalized-PURE-TS_CAN-4-19/cv_0_epoch02_model.tf"),
@@ -270,7 +271,8 @@ if __name__ == "__main__":
         subTrain, subDev, subTest = split_subj_(data_dir, "PURE")
         path_of_video_test = sort_dataFile_list_(data_dir, subTest, "PURE", trainMode=True)
         save_dir = '/home/bacharya/PURE/predictions/'
-        test_name = "PURE-Normalized-split"
+        # test_name = "PURE-Normalized-split"
+        test_name = "presentation"
     elif database_name=="COHFACE":
         path_results = "/home/bacharya/cohface/predictions/"
         model_checkpoints = [("Hybrid_CAN","/home/bacharya/cohface/checkpoints/old-split-with-normalization/short-cohface-Hybrid_CAN-4-19/cv_0_epoch02_model.tf"),
@@ -281,7 +283,8 @@ if __name__ == "__main__":
         subTrain, subDev, subTest = split_subj_(data_dir, "COHFACE")
         path_of_video_test = sort_dataFile_list_(data_dir, subTest, "COHFACE", trainMode=False)
         save_dir = '/home/bacharya/cohface/predictions/'
-        test_name = "cohface-old-split-with-normalization"
+        # test_name = "cohface-old-split-with-normalization"
+        test_name = "presentation"
     elif database_name=="VIPL":
         path_results = "/home/bacharya/vipl/predictions/"
         model_checkpoints = [("Hybrid_CAN","/home/bacharya/vipl/checkpoints/short-VIPL-Hybrid_CAN-4-39/cv_0_epoch01_model.tf/"),
@@ -292,7 +295,10 @@ if __name__ == "__main__":
         subTrain, subDev, subTest = split_subj_(split_path, "VIPL")
         path_of_video_test = sort_dataFile_list_(data_dir, subTest, "VIPL", trainMode=True)
         save_dir = '/home/bacharya/vipl/predictions/'
-        test_name = "VIPL-split"
+        # test_name = "VIPL-split"
+        test_name = "presentation"
+    elif database_name == "PURE_LOO":
+
     ####
     for model_name, model_checkpoint in model_checkpoints:
         print(path_of_video_test)
