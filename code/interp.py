@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 from matplotlib import animation
 
 import numpy as np
+from scipy.interpolate import interp1d
+
 import tensorflow as tf
 
 
@@ -100,3 +102,40 @@ def generate_animation(inputs, images, fps, title='', cmap='jet', alpha=0.4):
         return im
     
     return animation.FuncAnimation(fig, animate, init_func=init, frames=images.shape[0], interval=1/fps * 1000)
+
+def generate_video_animation(video, fps, title=''):
+    
+    fig = plt.figure(figsize=(10,6))
+    im = plt.imshow(video[0])
+    im.axes.xaxis.set_ticks([])
+    im.axes.yaxis.set_ticks([])
+    fig.colorbar(im)
+    plt.title(title)
+    plt.tight_layout()
+    
+    plt.close()
+    
+    def init():
+        im.set_data(video[0])
+        
+    def animate(i):
+        im.set_data(video[i])
+        
+    return animation.FuncAnimation(fig, animate, init_func=init, frames=video.shape[0], interval=1/fps * 1000)
+
+
+def interpolate_video(video: np.array, target_frames: int) -> np.array:
+    frames, height, width, channels = video.shape
+
+    new_video = np.zeros([target_frames, height, width, channels], dtype='uint8')
+    for i in range(height):
+        for j in range(width):
+            for c in range(channels):
+                x_new = np.linspace(0, frames, target_frames)
+                x = np.linspace(0, frames, frames)
+                y = video[:, i, j, c]
+                video_inter = interp1d(x, y)
+                y_new = video_inter(x_new)
+                new_video[:, i, j, c] = y_new
+
+    return new_video
